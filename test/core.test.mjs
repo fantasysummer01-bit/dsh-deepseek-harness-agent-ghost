@@ -274,7 +274,7 @@ test('SIGKILL releases OS lease and committed state survives while an interrupte
 test('personality growth, recall snapshots and export survive restart as the same Ghost', t => {
   const {open}=fixture(t), store=open(); enable(store);
   const old=new Date(Date.now()-80*86400000).toISOString();
-  for(let n=0;n<3;n++) store.ingest(event('growth-'+n,{sessionId:'independent-'+n,text:'我们常聊猫。请回答简洁一点。记住这一瞬间：小猫的左爪停在杯沿。',timestamp:old}));
+  for(let n=0;n<3;n++) store.ingest(event('growth-'+n,{sessionId:'independent-'+n,text:'我们常聊猫。请回答简洁一点。记住这一瞬间：小猫的左爪停在杯沿。',timestamp:new Date(Date.parse(old)+n*86400000).toISOString()}));
   const state=store.status();
   assert.equal(state.selfUnderstanding.status,'established');
   assert.equal(state.selfUnderstanding.sessionCount,3);
@@ -317,7 +317,7 @@ test('a legacy schema 1 identity without growth fields upgrades by append and ke
   original.db.prepare('UPDATE state SET json=? WHERE singleton=1').run(canonical(payload.state));
   original.close();
   const migrated=open(); assert.equal(migrated.verify().ok,true); enable(migrated);
-  for(let n=0;n<3;n++) migrated.ingest(event('legacy-'+n,{sessionId:'legacy-chat-'+n,text:'我们常聊猫。'}));
+  for(let n=0;n<3;n++) migrated.ingest(event('legacy-'+n,{sessionId:'legacy-chat-'+n,text:'我们常聊猫。',timestamp:new Date(Date.UTC(2026,8,1+n)).toISOString()}));
   assert.equal(migrated.status().ghostId,originalId); assert.equal(migrated.status().selfUnderstanding.status,'established');
   assert.equal(migrated.db.prepare('SELECT hash FROM ledger WHERE seq=1').get().hash,hash);
   assert.equal(migrated.verify().ok,true);

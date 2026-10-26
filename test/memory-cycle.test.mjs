@@ -162,3 +162,72 @@ test('learned personality attention selects a source instant but never an assist
   const model=compile([event('assistant',80,'记住猫的眼睛是红色。',{role:'assistant',source:'dsh:model'})],{attention}).archive[0];
   assert.deepEqual(model.focusSnapshots,[]); assert.equal(model.reconstructionAllowed,false);
 });
+
+test('programming and gardening attention share canonical keys and preserve legacy aliases', () => {
+  for (const [key, alias, text, detail] of [
+    ['programming', 'coding', '我们排查程序崩溃时，光标停在调试器第七行。', '光标'],
+    ['gardening', 'garden', '我们浇花时，花盆边缘停着一滴水。', '花盆'],
+  ]) {
+    const row = event(key, 90, text);
+    const canonical = compile([row], { attention: { topics: [{ key }] }, contextBudgetBytes: 16000 }).archive[0];
+    const legacy = compile([row], { attention: { topics: [{ key: alias }] }, contextBudgetBytes: 16000 }).archive[0];
+    assert.deepEqual(legacy.focusSnapshots, canonical.focusSnapshots);
+    assert.equal(canonical.focusSnapshots.length, 1);
+    assert.equal(canonical.focusSnapshots[0].eventId, row.eventId);
+    assert.equal(canonical.focusSnapshots[0].quote, text);
+    assert.equal(canonical.focusSnapshots[0].basis, 'learned_attention');
+    const queried = compile([row], { query: detail, attention: { topics: [{ key }] }, contextBudgetBytes: 16000 }).archive[0];
+    assert.deepEqual(queried.focusSnapshots, canonical.focusSnapshots);
+  }
+});
+
+test('visual, scientific and travel interests preserve sourced old instants without creating new details', () => {
+  for (const [key, text, detail] of [
+    ['visual_art', '我们画插画时，红色笔触停在人物左眼的边缘。', '左眼'],
+    ['science', '我们做物理实验时，铜线在仪器右侧弯成一个小圈。', '铜线'],
+    ['travel', '我们旅行时，在晨雾里停到一座石桥前。', '石桥'],
+  ]) {
+    const row = event(key, 180, text), before = structuredClone(row);
+    const attention = { topics: [{ key }] };
+    const item = compile([row], { attention, contextBudgetBytes: 16000 }).archive[0];
+    assert.equal(item.focusSnapshots.length, 1);
+    assert.equal(item.focusSnapshots[0].quote, text);
+    assert.equal(item.focusSnapshots[0].claimStatus, 'reported');
+    assert.deepEqual(item.anchor.eventIds, [row.eventId]);
+    assert.equal(item.reconstructionAllowed, true);
+    const recall = compile([row], { attention, query: detail, contextBudgetBytes: 16000 });
+    assert.deepEqual(recall.archive[0].focusSnapshots, item.focusSnapshots);
+    assert.deepEqual(row, before);
+  }
+});
+
+test('new attention topics do not promote public, hypothetical or model records to private recollections', () => {
+  const attention = { topics: [{ key: 'science' }] };
+  const publicItem = compile([event('public-science', 90, '我们讨论政府新闻中的物理实验公告。')], { attention }).archive[0];
+  assert.equal(publicItem.focusSnapshots.length, 1);
+  assert.equal(publicItem.requiresVerification, true);
+  assert.equal(publicItem.reconstructionAllowed, false);
+  const hypothetical = compile([event('imagined-science', 90, '假设我们在物理实验里看见铜线发光。')], { attention }).archive[0];
+  assert.equal(hypothetical.recordType, 'hypothetical');
+  assert.equal(hypothetical.reconstructionAllowed, false);
+  const model = compile([event('model-science', 90, '我们做物理实验时铜线发光。', { role: 'assistant', source: 'dsh:model' })], { attention }).archive[0];
+  assert.deepEqual(model.focusSnapshots, []);
+  assert.equal(model.claimStatus, 'model_output');
+  assert.equal(model.reconstructionAllowed, false);
+});
+
+test('expanded attention snapshots keep the same UTF-8 budget and source bounds', () => {
+  const rows = ['programming', 'gardening', 'visual_art', 'science', 'travel'].map((key, index) =>
+    event(key, 100 + index, '我们讨论编程、浇花、插画、物理和旅行。' + '原有细节'.repeat(500)));
+  const attention = { topics: rows.map(row => ({ key: row.eventId })) };
+  const result = compile(rows, { attention, contextBudgetBytes: 1500, topK: 2 });
+  assert.ok(result.items.length > 0 && result.items.length <= 2);
+  assert.ok(Buffer.byteLength(result.context, 'utf8') <= 1500);
+  assert.equal(result.stats.contextBytes, Buffer.byteLength(result.context, 'utf8'));
+  for (const line of result.context.trim().split('\n')) {
+    const item = JSON.parse(line);
+    assert.equal(item.focusSnapshots.length, 1);
+    assert.ok([...item.focusSnapshots[0].quote].length <= 240);
+    assert.ok(item.anchor.eventIds.includes(item.focusSnapshots[0].eventId));
+  }
+});

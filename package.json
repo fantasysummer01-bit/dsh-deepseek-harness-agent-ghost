@@ -1,6 +1,6 @@
 {
   "name": "dsh-ghost",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "让智能体在不同对话中保留记忆，延续同一个人格。 / Persistent memory and personality across conversations.",
   "repository": { "type": "git", "url": "https://github.com/fantasysummer01-bit/dsh-deepseek-harness-agent-ghost.git" },
   "homepage": "https://github.com/fantasysummer01-bit/dsh-deepseek-harness-agent-ghost#readme",
@@ -9,7 +9,7 @@
   "main": "lib/index.js",
   "exports": { ".": "./lib/index.js", "./client": "./lib/client.js", "./core": "./lib/core.js", "./package.json": "./package.json" },
   "files": ["lib", "docs", "scripts", "test", "cordis.patch.yml", "README.md"],
-  "scripts": { "test": "node --test test/*.test.mjs", "check": "node --check lib/index.js && node --check lib/core.js && node --check lib/client.js && node --check lib/transport.js && node --check lib/identity-growth.js && node --check lib/memory-cycle.js && node --check lib/subject-state.js && node --check lib/subject-tools.js && node --check lib/uninstall.js && node --check scripts/uninstall-worker.mjs", "pack:local": "node scripts/pack.mjs" },
+  "scripts": { "test": "node --test test/*.test.mjs", "check": "node --check lib/index.js && node --check lib/core.js && node --check lib/client.js && node --check lib/transport.js && node --check lib/identity-growth-v1.js && node --check lib/identity-growth.js && node --check lib/memory-cycle.js && node --check lib/subject-state.js && node --check lib/subject-tools.js && node --check lib/uninstall.js && node --check scripts/uninstall-worker.mjs", "pack:local": "node scripts/pack.mjs" },
   "engines": { "node": ">=24.0.0" },
   "license": "UNLICENSED",
   "private": true,

@@ -102,7 +102,7 @@ test('one start covers every visible conversation and stop removes memory from e
   t.after(async()=>{await app.close();fs.rmSync(dir,{recursive:true,force:true});});
   const id=(await app.call('status')).value.ghostId;
   assert.equal((await app.call('start')).value.running,true);
-  for(let n=0;n<3;n++) app.events.get('session/event')({id:'chat-'+n},{seq:1,time:Date.now(),surfaceOp:'append',type:'user/message',data:{source:{kind:'user'},content:'我们常聊猫。请回答简洁。'}});
+  for(let n=0;n<3;n++) app.events.get('session/event')({id:'chat-'+n},{seq:1,time:Date.UTC(2026,8,1+n),surfaceOp:'append',type:'user/message',data:{source:{kind:'user'},content:'我们常聊猫。请回答简洁。'}});
   const state=(await app.call('status')).value;
   assert.equal(state.counts.events,3); assert.equal(state.ghostId,id);
   assert.equal(state.selfUnderstanding.status,'established');
