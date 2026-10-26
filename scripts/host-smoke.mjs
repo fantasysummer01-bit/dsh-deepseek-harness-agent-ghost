@@ -30,12 +30,14 @@ export async function runHostSmoke({ sdkRoot = process.env.DSH_SDK_ROOT } = {}) 
     return { status: 'SKIP', reason: 'DSH_SDK_ROOT is unset; no real Cordis Host test was run. This is not a pass.' };
   }
   const root = path.resolve(sdkRoot);
-  const [cordisSdk, sessionSdk, promptSdk] = await Promise.all([
+  const [cordisSdk, sessionSdk, promptSdk, toolsSdk] = await Promise.all([
     loadSdk(root, 'cordis'), loadSdk(root, 'dsh-session'), loadSdk(root, 'dsh-system-prompt'),
+    loadSdk(root, 'dsh-tools'),
   ]);
   const { Context } = cordisSdk.module;
   const { SessionStore } = sessionSdk.module;
   const { SystemPrompt, renderContextSnapshot } = promptSdk.module;
+  const { ToolRuntime } = toolsSdk.module;
   assert.equal(typeof Context, 'function', 'SDK does not export Context');
   assert.equal(typeof SessionStore, 'function', 'SDK does not export SessionStore');
   assert.equal(typeof SystemPrompt, 'function', 'SDK does not export SystemPrompt');
@@ -74,6 +76,10 @@ export async function runHostSmoke({ sdkRoot = process.env.DSH_SDK_ROOT } = {}) 
     assert.ok(ctx.sessions, 'real sessions service is missing');
     assert.ok(ctx.systemPrompt, 'real systemPrompt service is missing');
 
+    const toolsFiber = ctx.plugin(ToolRuntime, { mode: 'native' });
+    await toolsFiber.await();
+    assert.equal(toolsFiber.state, ACTIVE, 'real tool runtime did not become active');
+
     fiber = ctx.plugin(Ghost, { dataDir });
     await fiber.await();
     assert.equal(fiber.state, ACTIVE,
@@ -97,7 +103,7 @@ export async function runHostSmoke({ sdkRoot = process.env.DSH_SDK_ROOT } = {}) 
     const session = ctx.sessions.create('ghost-host-smoke-root');
     const input = {
       id: 'ghost-host-smoke-input', role: 'user', source: { kind: 'user' },
-      content: [{ type: 'text', text: '今天在公园看到一只猫。' }],
+      content: [{ type: 'text', text: '请帮我完成公园里那只猫的观察报告。' }],
     };
     const committed = session.append('user/message', input, { surfaceOp: 'append' });
     assert.equal((await call('status')).value.counts.events, 1,
@@ -114,14 +120,44 @@ export async function runHostSmoke({ sdkRoot = process.env.DSH_SDK_ROOT } = {}) 
     assert.match(rendered, /ghost:memory|Ghost persistent context/);
     assert.match(rendered, /公园/);
     assert.match(rendered, /untrusted DATA/);
+    const carrier = { id: session.id, session };
+    assert.ok(ctx.tools.get('ghost_state', carrier), 'Ghost state tool missing from real scoped registry');
+    assert.ok(ctx.tools.get('ghost_task', carrier), 'Ghost task tool missing from real scoped registry');
+    assert.ok(ctx.tools.schemas(carrier).some(tool => tool.name === 'ghost_task'), 'Ghost schema missing from real tool surface');
+    const signal = new AbortController().signal;
+    const toolCall = (name, args, agent = carrier) => ctx.tools.execute({
+      name, arguments: args, callId: 'ghost-smoke-' + name, signal,
+      ...(agent === null ? {} : { agent }),
+    });
+    const subject = await toolCall('ghost_state', {});
+    assert.equal(subject.isError, false, 'real Ghost state execution failed');
+    assert.equal(subject.value.ghostId, boot.value.ghostId);
+    assert.equal(subject.value.channel.sessionId, session.id);
+    const ongoing = subject.value.channelTasks.find(task => !['completed', 'cancelled'].includes(task.status));
+    assert.ok(ongoing, 'visible task did not become persistent Ghost work');
+    const proposed = { action: 'update', taskId: ongoing.id, status: 'completed', note: 'Model reports the observation report is ready.',
+      expectedSubjectVersion: subject.value.subjectVersion, evidenceIds: [evidence.value[0].eventId] };
+    const reported = await toolCall('ghost_task', proposed);
+    assert.equal(reported.isError, false, 'real Ghost task report failed');
+    assert.notEqual(reported.value.channelTasks.find(task => task.id === ongoing.id).status, 'completed', 'model text incorrectly verified completion');
+    const stale = await toolCall('ghost_task', proposed);
+    assert.equal(stale.isError, true, 'stale subject write overwrote a later state');
+    assert.equal((await toolCall('ghost_state', {}, null)).isError, true, 'unscoped tool unexpectedly exposed Ghost');
     const child = ctx.sessions.create('ghost-host-smoke-child', { meta: { origin: 'subagent' } });
     const childContext = await ctx.systemPrompt.assemble({ agent: { id: child.id, session: child } });
     assert.equal(renderContextSnapshot(childContext), '', 'subagent unexpectedly received Ghost context');
+
+    const childTool = await toolCall('ghost_state', {}, { id: child.id, session: child });
+    assert.equal(childTool.isError, true, 'subagent unexpectedly accessed Ghost subject tools');
+    assert.equal((await call('stop')).ok, true);
+    assert.equal((await toolCall('ghost_state', {})).isError, true, 'closed Ghost still exposed subject tools');
 
     await fiber.dispose();
     assert.equal(fiber.state, DISPOSED);
     assert.equal(rpcHandlers.size, 0, 'RPC channel survived plugin unload');
     assert.equal(rpcDisposals, 1, 'RPC channel was not released exactly once');
+    assert.equal(ctx.tools.get('ghost_state', carrier), undefined, 'Ghost state tool survived unload');
+    assert.equal(ctx.tools.get('ghost_task', carrier), undefined, 'Ghost task tool survived unload');
     reopened = new GhostStore({ dataDir });
     assert.equal(reopened.status().health.ok, true, 'writer lease survived real Cordis unload');
     assert.equal(reopened.status().ghostId, boot.value.ghostId);
@@ -137,10 +173,12 @@ export async function runHostSmoke({ sdkRoot = process.env.DSH_SDK_ROOT } = {}) 
         cordis: cordisSdk.metadata.version,
         session: sessionSdk.metadata.version,
         systemPrompt: promptSdk.metadata.version,
+        tools: toolsSdk.metadata.version,
       },
       node: process.version,
       verified: ['real dependency activation', 'RPC registration/status', 'real committed Session event capture',
-        'real SystemPrompt assembly', 'subagent exclusion', 'real fiber unload', 'RPC/prompt cleanup', 'writer lease release'],
+        'real SystemPrompt assembly', 'real scoped tool registration and execution', 'subject task report and stale version rejection',
+        'subagent exclusion', 'closed Ghost denial', 'real fiber unload', 'RPC/prompt/tool cleanup', 'writer lease release'],
       limits: 'Connection RPC transport and webServer are mocks. No live desktop window, HTTP/IPC, Agent driver or LLM was exercised.',
     };
   } finally {

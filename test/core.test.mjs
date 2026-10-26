@@ -122,7 +122,7 @@ test('checkpoint validates anchor and replays committed tail with exact version/
   const report = restored.verify();
   assert.equal(report.ok, true);
   assert.equal(report.checkpointId, checkpoint.checkpointId);
-  assert.equal(report.replayedTransitions, 2);
+  assert.equal(report.replayedTransitions, before.version - checkpoint.stateVersion);
   assert.equal(report.recoveredVersion, before.version);
 });
 
@@ -310,7 +310,7 @@ test('a legacy schema 1 identity without growth fields upgrades by append and ke
   const originalId=original.status().ghostId;
   const canonical=value=>JSON.stringify((function sort(x){return Array.isArray(x)?x.map(sort):x&&typeof x==='object'?Object.fromEntries(Object.keys(x).sort().map(k=>[k,sort(x[k])])):x;})(value));
   const row=original.db.prepare('SELECT * FROM ledger').get();
-  const payload=JSON.parse(row.payload); delete payload.state.selfUnderstanding;
+  const payload=JSON.parse(row.payload); delete payload.state.selfUnderstanding; delete payload.state.subject;
   const encoded=canonical(payload);
   const hash=createHash('sha256').update(canonical({version:row.version,kind:row.kind,payload:encoded,prevHash:row.prev_hash,createdAt:row.created_at,lastEventSeq:row.last_event_seq})).digest('hex');
   original.db.prepare('UPDATE ledger SET payload=?,hash=?').run(encoded,hash);
