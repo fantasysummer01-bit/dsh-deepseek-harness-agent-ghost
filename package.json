@@ -1,7 +1,7 @@
 {
   "name": "dsh-ghost",
-  "version": "0.2.0",
-  "description": "Ghost：以持久记忆与 LLM 串联跨会话的虚拟人格 / A continuous virtual personality through memory and an LLM",
+  "version": "0.2.1",
+  "description": "让智能体在不同对话中保留记忆，延续同一个人格。 / Persistent memory and personality across conversations.",
   "repository": { "type": "git", "url": "https://github.com/fantasysummer01-bit/dsh-deepseek-harness-agent-ghost.git" },
   "homepage": "https://github.com/fantasysummer01-bit/dsh-deepseek-harness-agent-ghost#readme",
   "bugs": { "url": "https://github.com/fantasysummer01-bit/dsh-deepseek-harness-agent-ghost/issues" },

@@ -74,8 +74,8 @@ test('registers a default-off Ghost control surface through authenticated RPC', 
   assert.equal(app.styles(), 1); assert.deepEqual(app.calls[0].slice(0, 2), ['/ghost', 'status']);
   const panel = app.render();
   assert.match(text(panel), /已关闭/); assert.match(text(panel), /已积累 3 条经历/);
-  assert.match(text(panel), /近 15 天/); assert.match(text(panel), /所有对话延续同一个 Ghost/);
-  assert.match(text(panel), /16–60 天保留概要与重点/); assert.match(text(panel), /区分记得与推演/);
+  assert.match(text(panel), /Ghost 为智能体保存记忆和人格/);
+  assert.match(text(panel), /记忆管理参考海马体/);
   assert.equal(button(panel, '启动 GHOST 系统').props.disabled, false);
   assert.equal(app.calls.length, 1);
 });
