@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ghost · DSH 设置交互预览</title>
+<style>
+:root{font-family:Inter,"Segoe UI","Microsoft YaHei",sans-serif;color:#20242c;background:#edf0f4;color-scheme:light;--dsw-alias-bg-layer-2:#fff;--dsw-alias-label-primary:#20242c;--dsw-alias-label-secondary:#797f8a;--dsw-alias-border-primary:#e2e5ea;--dsw-alias-interactive-bg-hover:#f0f2f6;--dsw-alias-brand-primary:#376df0}
+*{box-sizing:border-box}body{margin:0;padding:25px 20px}body.dark{color-scheme:dark;background:#15171b;color:#e4e7ee;--dsw-alias-bg-layer-2:#22252b;--dsw-alias-bg-layer-1:#1c1f24;--dsw-alias-label-primary:#e4e7ee;--dsw-alias-label-secondary:#a1a7b2;--dsw-alias-border-primary:#3b4049;--dsw-alias-interactive-bg-hover:#30353e;--dsw-alias-brand-primary:#6590ff}.preview-banner{max-width:900px;margin:0 auto 14px;display:flex;justify-content:space-between;gap:12px;font-size:12px;color:var(--dsw-alias-label-secondary)}.preview-banner button{font:inherit;color:inherit;background:transparent;border:1px solid var(--dsw-alias-border-primary);border-radius:6px;padding:4px 10px;cursor:pointer}.preview-panel{display:flex;width:900px;max-width:100%;height:calc(100vh - 100px);min-height:400px;max-height:920px;margin:auto;background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-primary);border-radius:26px;overflow:hidden;box-shadow:0 12px 38px #141b2c12}.preview-nav{flex:none;width:188px;padding:24px 12px}.preview-nav h1{margin:0 12px 24px;font-size:16px;font-weight:500}.preview-nav div{display:flex;gap:10px;align-items:center;border-radius:10px;margin:4px 0;padding:10px 12px;font-size:13px;white-space:nowrap}.preview-nav div.active{background:var(--dsw-alias-interactive-bg-hover);font-weight:500}.preview-nav span{width:16px;text-align:center;color:var(--dsw-alias-label-secondary)}.preview-main{min-width:0;flex:1;overflow:auto;padding:30px 24px 24px 12px}.preview-disclaimer{border:1px solid var(--dsw-alias-border-primary);padding:8px 10px;margin-bottom:18px;border-radius:7px;font-size:11px;color:var(--dsw-alias-label-secondary);line-height:1.6}@media(max-width:620px){body{padding:12px 8px}.preview-panel{border-radius:16px;height:calc(100vh - 80px)}.preview-nav{width:76px;padding:20px 7px}.preview-nav h1{margin:0 4px 20px;font-size:14px}.preview-nav div{padding:9px 8px;font-size:11px;justify-content:center}.preview-nav div:not(.active){display:none}.preview-nav span{display:none}.preview-main{padding:20px 13px 16px}}
+</style>
+<div class="preview-banner"><span>Ghost / DSH 设置交互预览</span><button id="theme">切换深浅色</button></div>
+<div class="preview-panel"><nav class="preview-nav"><h1>设置</h1><div><span>♙</span>账号与余额</div><div><span>⚙</span>通用设置</div><div><span>◉</span>模型</div><div><span>☷</span>内置插件</div><div><span>♧</span>Agent 预设</div><div><span>⚙</span>启动动画</div><div class="active"><span>◈</span>Ghost</div></nav><main class="preview-main"><div class="preview-disclaimer">演示数据 · 此页只在浏览器内存中模拟操作，不连接 DSH，不读取或修改真实聊天。安装插件后使用 DSH 提供的 React 与已鉴权 RPC。</div><div id="root"></div></main></div>
+<script>
+/* Small preview-only component renderer. The installed plugin uses DSH's React. */
+(() => {
+  const hooks=[], effects=[]; let cursor=0, pending=false, element=null, counter=0;
+  const root=document.getElementById('root');
+  function schedule(){if(!pending){pending=true;queueMicrotask(render);}}
+  const React={
+    createElement:(type,props,...children)=>({type,props:{...props,children}}),
+    useState(value){const index=cursor++;if(!(index in hooks))hooks[index]=value;return[hooks[index],value=>{hooks[index]=typeof value==='function'?value(hooks[index]):value;schedule();}];},
+    useRef(value){const index=cursor++;if(!(index in hooks))hooks[index]={current:value};return hooks[index];},
+    useEffect(work){const index=cursor++;if(!(index in hooks)){hooks[index]=true;effects.push(work);}},
+  };
+  function node(value){
+    if(value==null||value===false||value===true)return document.createTextNode('');
+    if(Array.isArray(value)){const part=document.createDocumentFragment();value.forEach(child=>part.appendChild(node(child)));return part;}
+    if(typeof value!=='object')return document.createTextNode(String(value));
+    if(typeof value.type==='function')return node(value.type(value.props));
+    const el=document.createElement(value.type),p=value.props;
+    if(['input','textarea','button'].includes(value.type))el.dataset.previewIndex=counter++;
+    for(const [key,value]of Object.entries(p)){
+      if(key==='children'||key==='key'||value==null)continue;
+      if(key==='className'){el.className=value;continue;}
+      if(key==='htmlFor'){el.htmlFor=value;continue;}
+      if(key==='style'){Object.assign(el.style,value);continue;}
+      if(key.startsWith('on')){const event=key==='onChange'?(p.type==='checkbox'?'change':'input'):key.slice(2).toLowerCase();el.addEventListener(event,value);continue;}
+      if(['value','checked','disabled'].includes(key)){el[key]=value;continue;}
+      el.setAttribute(key,String(value));
+    }
+    el.appendChild(node(p.children));return el;
+  }
+  function render(){
+    pending=false;cursor=0;counter=0;
+    const focused=document.activeElement,focusIndex=focused?.dataset.previewIndex,selection=focused&&['INPUT','TEXTAREA'].includes(focused.tagName)?[focused.selectionStart,focused.selectionEnd]:null;
+    root.replaceChildren(node(element));
+    if(focusIndex!=null){const target=root.querySelector('[data-preview-index="'+focusIndex+'"]');target?.focus({preventScroll:true});try{if(selection&&target)target.setSelectionRange(...selection);}catch{}}
+    effects.splice(0).forEach(work=>work());
+  }
+  let state={ghostId:'ghost-demo-6a2a17',branchId:'branch-local-04e9',version:7,name:'Ghost',identity:'以诚实、温和的方式与我协作。区分用户原话、模型推断和已经发生的事实；不知道的细节直接说明。',traits:{curiosity:.62,initiative:.45,caution:.72},goals:['完成 Ghost 第一阶段验证','下次继续讨论公园里的故事'],settings:{enabled:true,captureEnabled:false,captureAssistant:false,allowedSessions:[],contextBudgetBytes:6000,topK:5},counts:{events:12,changes:7},health:{ok:true,readOnly:false,error:null},lastCheckpoint:{createdAt:'2026-10-26T10:30:00+08:00'}};
+  const events=[{eventId:'evt-demo-0001',sessionId:'park-story-demo',role:'user',text:'今天在公园看到一只猫，旁边有一家咖啡店。',timestamp:'2026-10-25T15:00:00+08:00'},{eventId:'evt-demo-0002',sessionId:'park-story-demo',role:'assistant',text:'如果有机会亲自看看，一定很有意思。',timestamp:'2026-10-25T15:00:05+08:00'}];
+  window.__ModuleLoader__={load(spec){const plugin=spec.factory(name=>{if(name!=='react')throw Error(name);return React;});plugin.apply({slots:{inject(_name,work){work();},register(options,component){if(options.id==='ghost'){element=component();render();}}},connection:{rpc:{async call(_service,endpoint,payload){await new Promise(resolve=>setTimeout(resolve,180));if(_service!=='/ghost')throw Error('Unexpected RPC service');const action=endpoint;let value;if(action==='status')value=structuredClone(state);else if(action==='configure'){if(payload.expectedVersion!==state.version)return{ok:false,error:{code:'VERSION_CONFLICT',message:'Version conflict'}};state={...state,...structuredClone(payload.patch),version:state.version+1};state.counts.changes++;value=structuredClone(state);}else if(action==='search')value=events.filter(row=>row.text.includes(payload.query));else if(action==='checkpoint'){state.lastCheckpoint={createdAt:new Date().toISOString()};value=state.lastCheckpoint;}else if(action==='verify')value={ok:true};else if(action==='export')value={schemaVersion:1,preview:true,state,events};else return{ok:false,error:{message:'Unknown preview action'}};return{ok:true,value};}}}});}};
+  document.getElementById('theme').onclick=()=>document.body.classList.toggle('dark');
+})();
+</script>
+<script src="../lib/client.js"></script>
+</html>

@@ -1,0 +1,30 @@
+name: Ghost checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  portable:
+    name: Node 24 on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - run: npm run check
+      - run: npm test
+      - run: node scripts/pack.mjs
+      - name: Describe validation scope
+        run: echo "Portable baseline only. Real DSH SDK and HTTP tests require DSH_SDK_ROOT and are skipped on hosted runners."
