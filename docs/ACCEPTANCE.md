@@ -1,62 +1,37 @@
-# Ghost 0.1.0 实测记录
+# Ghost 0.2.0 验证记录
 
-测试日期：2026-10-26。以下区分独立核心、真实 SDK、真实 HTTP 和桌面 UI，不能互相替代。
+日期：2026-10-26。README 为中英双语原理简介，本文件记录实现与验收边界。
 
-## 环境
+## 验证结果
 
-- Windows，PowerShell。
-- Node 24.19.0；Desktop 内置 Node 24.18.1。
-- Desktop 0.2.0-rc.2，Cordis 4.0.4；Session/SystemPrompt/WebServer/Connection 0.2.0-rc.2。
+- 语法检查：npm run check。
+- 真实 Desktop Node / SDK：scripts/Test-Desktop.ps1，84 项通过，0 失败，0 跳过。使用独立 Electron Node 进程与临时测试数据，不结束桌面任务、不使用生产凭据。
+- 普通 Node：npm test；无 DSH_SDK_ROOT 时两个真实 SDK / HTTP 测试明确跳过，不计通过。
+- Edge 无头渲染：preview/check.mjs，验证启动／关闭、内部身份不外露、核心 JSON 真实浏览器下载、卸载预览／取消／精确确认、等待退出状态、590px 与深浅色。JavaScript 错误 0，无横向溢出。仅内存演示数据。
 
-## 自动测试
+## 覆盖
 
-在 Desktop 自带 Node 和 SDK 下运行：
+稳定 Ghost ID 与状态恢复、幂等去重、来源区分、子代理与注入排除、事务失败回滚、强制中断恢复、账本和事件篡改诊断、同机双写保护、一致备份。
 
-```powershell
-$DesktopRoot = 'C:\Path\To\DeepSeek' # 替换为实际 Desktop 安装目录
-$env:ELECTRON_RUN_AS_NODE='1'
-$env:DSH_SDK_ROOT=Join-Path $DesktopRoot 'resources\app.asar\dsh\node_modules\@deepseek-ai'
-& (Join-Path $DesktopRoot 'DeepSeek Harness.exe') --expose-internals --test test/bridge.test.mjs test/core.test.mjs test/client.test.mjs test/host.test.mjs test/transport.test.mjs
-```
+新增：默认关闭、一键启动所有未来可见聊天、关闭后停止采集和上下文、跨聊天同一人格、三个独立真人会话的证据归纳、身份成长事务与重放、旧 schema 1 账本追加升级、15／60 天边界、显著性排序、有限预算、公共事实核验提示、私人重构与来源锚点、查询无关的关注快照、快照仅来自用户记录、完整核心导出。
 
-28 项通过，0 失败，0 跳过。无 `DSH_SDK_ROOT` 时，真实 SDK / transport 两项明确 SKIP，不能计为通过。
+卸载隔离测试覆盖：预览只读、过期和状态变化拒绝、确认短语和删除同意、先停 Ghost 再排队、等待 Desktop 正常退出、官方 CLI 失败保留数据、残留链接拒绝删除、只删除已确认的自有文件、部分删除重试、活跃写入者保护、路径替换与 junction／symlink／dangling marker／源码树保护。没有对真实生产记忆执行卸载。
 
-覆盖：稳定身份与状态重启、批准设置的版本控制、事件去重和冲突、未授权拒绝、事务插入失败回滚、checkpoint + tail 恢复、篡改检测后只读、schema 不明拒绝猜测、同库与副本双写冲突、一致备份、UTF-8 预算、词面召回、强制杀进程后恢复、来源过滤、子代理隔离、设置页错误与冲突处理、失败加载释放租约。
+真实 Host 测试使用实际 Cordis、SessionStore 和 SystemPrompt；真实 HTTP 测试使用实际 WebServer、Connection 与临时 LocalCredentialProvider，覆盖 401／303／200／403／405／415／400／413／404。
 
-## 真实 Host 契约
+## 实现边界
 
-`scripts/host-smoke.mjs` 使用实际 Cordis / SessionStore / SystemPrompt。实际 Session.append 能触发捕获；实际 prompt 装配能得到证据；实际 fiber 卸载移除贡献并释放租约。这项测试的传输边界是内存 fixture。
+- 人格为可追溯的规则归纳，没有训练神经网络。低风险关注／表达观察可以自动追加；权限和行为边界不会随聊天改变。旧手工人设保留在历史，当前上下文使用学习观察。
+- 15／60 天生命周期作用于召回表示。原始事件仍在本地账本中供审计和导出；不是按天擦除磁盘。梗概以日期、主题和来源概括，关注快照为最多一条、240 字以内的原文瞬间／情景片段，不是图片。
+- 记忆候选按当前查询、时间、用户明确重要性、重复主题和表达线索排序；当前人格关注影响快照选择。无需额外模型请求，不读取旧 DSH 历史。未验证大规模性能，规则仅覆盖有限主题，召回可能漏失。
+- 当前人格摘要、关注、表达倾向和内部 trait 随旧事一同注入当前 LLM。私人经过／问题的补全属于模型推演，不另存为用户证据；模型回复始终保留 assistant 来源。
+- 公共事实核验依赖当前 DSH agent 可见且可用的 web_search / web_fetch 与 provider。Ghost 通过上下文要求可靠来源、URL 和未核验标记，不包含独立联网事实核查器，也不能保证任意模型遵守提示。不得将私人记忆、私人姓名或原话拼进查询／URL。
+- 核心导出为有版本和 SHA-256 的 JSON，含人格、原始事件、账本与检查点，不含宿主配置或凭据。它包含私人记忆，应由用户保管。暂未提供跨设备导入 UI。
+- 完全卸载仅移除当前 Desktop profile 的 Ghost，删除本次批准目录内自有数据。手工导出、外部备份、其他 profile、源码与 GitHub 保留；系统共享锁文件不含记忆。官方卸载后若磁盘清理失败，隔离 helper 保留故障信息，不能保证插件 UI 仍可重试。
+- 新版追加 identity_growth 账本类型。旧程序不能安全写入此类账本；回滚需要升级前备份，未知 schema 仍拒绝猜测迁移。
 
-## 真实鉴权与 HTTP
+## 本机安装状态
 
-`scripts/transport-smoke.mjs` 使用实际 WebServer、Connection 和临时目录中的 LocalCredentialProvider。只启动隔离的 loopback 临时测试服务，退出后清理；不修改生产账号或 profile，不打印 token/cookie。
+当前 Desktop profile 的 dsh-ghost junction 指向此项目，源码和包版本已更新至 0.2.0。DSH 后台进程仍运行，遵照用户此前指示保留，不强制终止或重启。生产窗口在正常重启前可能仍运行旧代码。
 
-| 场景 | 实测 |
-| --- | --- |
-| 未登录 POST | 401 |
-| 宿主 launch token 交换 | 303，取得签名 cookie（不输出凭据） |
-| 已登录 status / configure | 200 |
-| 旧版本覆盖设置 | VERSION_CONFLICT，未覆盖 |
-| 异站 Origin | 403 |
-| 错误 HTTP 方法 | 405 |
-| 错误 Content-Type | 415 |
-| 无效 JSON | 400 |
-| 超过 64 KiB | 413 |
-| 卸载后访问 | 404 |
-
-实机发现并修复：服务依赖名须为 `sessions`；当前 SDK 的嵌套 `connection.rpc.handle` 在访问 `webServer` 时触发 Cordis 依赖追踪错误。插件改为从自己的注入 context 注册 `/ghost` 路由，调用 `connection.requestRejection` 复用宿主鉴权，并严格实现原有 Connection RPC wire envelope。没有修改宿主内核。
-
-## 桌面安装与 UI
-
-- 使用内置官方 CLI 成功添加本地 `dsh-ghost` 依赖与 bundle。
-- 配置备份：`artifacts/profile-backups/<timestamp>/`（仅本地保存，不进入源码仓库）。
-- 真实桌面设置侧栏已出现 Ghost，位置在「启动动画」下方。
-- 首次桌面读取状态暴露后台启动错误；通过真实 transport 测试定位修复。
-- 最新桌面页往返和检查点验证：尚待生产 Desktop 重启加载修复后完成；没有为验收强制中断现有宿主任务。
-- 原有启动动画依赖仍在；无旧聊天采集，采集开关保持默认关闭。
-
-预览页面另外验证了浅色/深色、590px 窄布局、保存、检索、检查点、校验，JavaScript 错误为 0；预览明确使用演示数据，不能作为实机后台通过的证据。
-
-## 尚未验收
-
-真实模型对话的跨会话回忆与幻觉率对照；1万/10万事件性能；删除传播；自动巩固；神经网络；跨设备分叉仲裁；未知旧版数据迁移。没有运行这些项目，也没有把它们写为完成。
+尚未验收：生产窗口重载后的页面往返、真实模型连续聊天的回忆质量、公共事件引用可靠性与幻觉率、万级事件性能、跨设备安全迁移。隔离 SDK、HTTP 与浏览器预览不能代替这些验收。

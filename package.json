@@ -1,7 +1,7 @@
 {
   "name": "dsh-ghost",
-  "version": "0.1.0",
-  "description": "Ghost 本地身份、可追溯记忆与状态连续性插件，含 DSH 原生设置页面",
+  "version": "0.2.0",
+  "description": "Ghost：以持久记忆与 LLM 串联跨会话的虚拟人格 / A continuous virtual personality through memory and an LLM",
   "repository": { "type": "git", "url": "https://github.com/fantasysummer01-bit/dsh-deepseek-harness-agent-ghost.git" },
   "homepage": "https://github.com/fantasysummer01-bit/dsh-deepseek-harness-agent-ghost#readme",
   "bugs": { "url": "https://github.com/fantasysummer01-bit/dsh-deepseek-harness-agent-ghost/issues" },
@@ -9,7 +9,7 @@
   "main": "lib/index.js",
   "exports": { ".": "./lib/index.js", "./client": "./lib/client.js", "./core": "./lib/core.js", "./package.json": "./package.json" },
   "files": ["lib", "docs", "scripts", "test", "cordis.patch.yml", "README.md"],
-  "scripts": { "test": "node --test test/*.test.mjs", "check": "node --check lib/index.js && node --check lib/core.js && node --check lib/client.js && node --check lib/transport.js", "pack:local": "node scripts/pack.mjs" },
+  "scripts": { "test": "node --test test/*.test.mjs", "check": "node --check lib/index.js && node --check lib/core.js && node --check lib/client.js && node --check lib/transport.js && node --check lib/identity-growth.js && node --check lib/memory-cycle.js && node --check lib/uninstall.js && node --check scripts/uninstall-worker.mjs", "pack:local": "node scripts/pack.mjs" },
   "engines": { "node": ">=24.0.0" },
   "license": "UNLICENSED",
   "private": true,

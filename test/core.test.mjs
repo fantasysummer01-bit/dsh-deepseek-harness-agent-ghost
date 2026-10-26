@@ -6,6 +6,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
+import { createHash } from 'node:crypto';
 import { GhostStore } from '../lib/core.js';
 
 const coreUrl = pathToFileURL(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../lib/core.js')).href;
@@ -17,7 +18,7 @@ function fixture(t) {
   const open = (opts = options) => { const store = new GhostStore(opts); stores.push(store); return store; };
   return { root, options, open };
 }
-const enable = store => store.configure({ settings: { captureEnabled: true } }, store.status().version);
+const enable = store => store.configure({ settings: { enabled: true, captureEnabled: true } }, store.status().version);
 const event = (id = 'evt-1', patch = {}) => ({ eventId: id, sessionId: 'session-1', role: 'user', text: '今天在公园看到一只猫，旁边有咖啡店。', ...patch });
 
 test('new store defaults to capture off and preserves stable identity on normal reopen', t => {
@@ -68,7 +69,7 @@ test('captured assistant output and historical instructions do not change traits
 
 test('session consent allowlist and disabled switch are enforced in the core', t => {
   const { open } = fixture(t); const store = open();
-  store.configure({ settings: { captureEnabled: true, allowedSessions: ['permitted'] } }, store.status().version);
+  store.configure({ settings: { enabled: true, captureEnabled: true, allowedSessions: ['permitted'] } }, store.status().version);
   assert.equal(store.ingest(event()).reason, 'session_not_authorized');
   assert.equal(store.ingest(event('yes', { sessionId: 'permitted' })).accepted, true);
   store.configure({ settings: { enabled: false } }, store.status().version);
@@ -101,7 +102,7 @@ test('a captured message advances the version and a stale open settings form can
   const { open } = fixture(t); const store = open(); enable(store);
   const formVersion = store.status().version;
   store.ingest(event());
-  assert.equal(store.status().version, formVersion + 1);
+  assert.ok(store.status().version > formVersion);
   assert.throws(() => store.configure({ name: 'stale form' }, formVersion), { code: 'VERSION_CONFLICT' });
   assert.equal(store.status().name, 'Ghost');
   store.configure({ name: 'fresh form' }, store.status().version);
@@ -245,7 +246,7 @@ test('SIGKILL releases OS lease and committed state survives while an interrupte
   const { options, open } = fixture(t);
   const childCode = `import {GhostStore} from ${JSON.stringify(coreUrl)};
     const store=new GhostStore(${JSON.stringify(options)});
-    store.configure({settings:{captureEnabled:true},goals:['完成恢复']},store.status().version);
+    store.configure({settings:{enabled:true,captureEnabled:true},goals:['完成恢复']},store.status().version);
     store.ingest({eventId:'committed',sessionId:'s',role:'user',text:'已提交'});
     store.checkpoint();
     store.db.exec('BEGIN IMMEDIATE');
@@ -267,4 +268,57 @@ test('SIGKILL releases OS lease and committed state survives while an interrupte
   assert.equal(restored.status().counts.events, 1);
   assert.deepEqual(restored.status().goals, ['完成恢复']);
   assert.equal(restored.ingest({ eventId: 'committed', sessionId: 's', role: 'user', text: '已提交' }).duplicate, true);
+});
+
+
+test('personality growth, recall snapshots and export survive restart as the same Ghost', t => {
+  const {open}=fixture(t), store=open(); enable(store);
+  const old=new Date(Date.now()-80*86400000).toISOString();
+  for(let n=0;n<3;n++) store.ingest(event('growth-'+n,{sessionId:'independent-'+n,text:'我们常聊猫。请回答简洁一点。记住这一瞬间：小猫的左爪停在杯沿。',timestamp:old}));
+  const state=store.status();
+  assert.equal(state.selfUnderstanding.status,'established');
+  assert.equal(state.selfUnderstanding.sessionCount,3);
+  assert.ok(state.selfUnderstanding.topics.some(item=>item.key==='cats'));
+  const prompt=store.compose('杯沿');
+  assert.match(prompt,/CURRENT Ghost personality/); assert.match(prompt,/focusSnapshots/);
+  assert.match(prompt,/unverified/); assert.match(prompt,/Never put private memories/);
+  const exported=store.exportCore();
+  assert.equal(exported.format,'dsh-ghost-core'); assert.equal(exported.events.length,3);
+  assert.equal(exported.memoryPolicy.recentDays,15); assert.match(exported.sha256,/^[a-f0-9]{64}$/);
+  assert.ok(exported.ledger.some(row=>row.kind==='identity_growth'));
+  store.checkpoint(); store.close();
+  const restored=open(); assert.equal(restored.status().ghostId,state.ghostId);
+  assert.deepEqual(restored.status().selfUnderstanding,state.selfUnderstanding);
+  assert.equal(restored.verify().ok,true);
+});
+
+test('growth failure rolls back the supporting event as well as learned state', t => {
+  const {open}=fixture(t),store=open(); enable(store);
+  store.ingest(event('first',{sessionId:'one',text:'我们聊猫。'}));
+  store.ingest(event('second',{sessionId:'two',text:'我们聊猫。'}));
+  const before=store.exportData();
+  store.db.exec("CREATE TRIGGER fail_growth BEFORE INSERT ON ledger WHEN NEW.kind='identity_growth' BEGIN SELECT RAISE(ABORT,'growth failure'); END");
+  assert.throws(()=>store.ingest(event('third',{sessionId:'three',text:'我们聊猫。'})),/growth failure/);
+  const after=store.exportData();
+  assert.deepEqual(after.state,before.state); assert.deepEqual(after.events,before.events);
+  assert.deepEqual(after.ledger,before.ledger); assert.equal(store.verify().ok,true);
+});
+
+
+test('a legacy schema 1 identity without growth fields upgrades by append and keeps the original anchor', t => {
+  const {open}=fixture(t), original=open();
+  const originalId=original.status().ghostId;
+  const canonical=value=>JSON.stringify((function sort(x){return Array.isArray(x)?x.map(sort):x&&typeof x==='object'?Object.fromEntries(Object.keys(x).sort().map(k=>[k,sort(x[k])])):x;})(value));
+  const row=original.db.prepare('SELECT * FROM ledger').get();
+  const payload=JSON.parse(row.payload); delete payload.state.selfUnderstanding;
+  const encoded=canonical(payload);
+  const hash=createHash('sha256').update(canonical({version:row.version,kind:row.kind,payload:encoded,prevHash:row.prev_hash,createdAt:row.created_at,lastEventSeq:row.last_event_seq})).digest('hex');
+  original.db.prepare('UPDATE ledger SET payload=?,hash=?').run(encoded,hash);
+  original.db.prepare('UPDATE state SET json=? WHERE singleton=1').run(canonical(payload.state));
+  original.close();
+  const migrated=open(); assert.equal(migrated.verify().ok,true); enable(migrated);
+  for(let n=0;n<3;n++) migrated.ingest(event('legacy-'+n,{sessionId:'legacy-chat-'+n,text:'我们常聊猫。'}));
+  assert.equal(migrated.status().ghostId,originalId); assert.equal(migrated.status().selfUnderstanding.status,'established');
+  assert.equal(migrated.db.prepare('SELECT hash FROM ledger WHERE seq=1').get().hash,hash);
+  assert.equal(migrated.verify().ok,true);
 });

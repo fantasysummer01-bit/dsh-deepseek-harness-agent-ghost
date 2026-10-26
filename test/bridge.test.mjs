@@ -50,7 +50,7 @@ test('native RPC, consent, evidence context, optimistic save and unload', async 
     const event = { seq: 1, time: Date.now(), surfaceOp: 'append', type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: '昨天在公园看到猫' }] } };
     events.get('session/event')(session, event);
     assert.equal((await call('status')).value.counts.events, 0);
-    const saved = await call('configure', { expectedVersion: status.version, patch: { name: 'Ghost 测试', settings: { captureEnabled: true } } });
+    const saved = await call('configure', { expectedVersion: status.version, patch: { name: 'Ghost 测试', settings: { enabled: true, captureEnabled: true } } });
     assert.equal(saved.ok, true);
     status = saved.value;
     events.get('agent/inbox/claimed')({ agent: { id: 's1' }, message: event.data });
@@ -84,4 +84,48 @@ test('failed host registration releases the writer lease for the next load', () 
     assert.equal(store.status().health.ok, true);
     store.close();
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+
+function bridgeHarness(config) {
+  const events=new Map(); let route,provider,cleanup;
+  apply({connection:{requestRejection(){}},webServer:{register(value){route=value;return()=>{};}},
+    on(name,fn){events.set(name,fn);return()=>events.delete(name);},
+    systemPrompt:{variable(_name,fn){provider=fn;return()=>{};},context(){return()=>{};}},
+    effect(fn){cleanup=fn();}},config);
+  return {events,call:(action,payload={})=>invokeRoute(route,action,payload),prompt:id=>provider({agent:{id}}),close:()=>cleanup()};
+}
+
+test('one start covers every visible conversation and stop removes memory from every prompt', async t => {
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'ghost-global-test-'));
+  let app=bridgeHarness({dataDir:dir});
+  t.after(async()=>{await app.close();fs.rmSync(dir,{recursive:true,force:true});});
+  const id=(await app.call('status')).value.ghostId;
+  assert.equal((await app.call('start')).value.running,true);
+  for(let n=0;n<3;n++) app.events.get('session/event')({id:'chat-'+n},{seq:1,time:Date.now(),surfaceOp:'append',type:'user/message',data:{source:{kind:'user'},content:'我们常聊猫。请回答简洁。'}});
+  const state=(await app.call('status')).value;
+  assert.equal(state.counts.events,3); assert.equal(state.ghostId,id);
+  assert.equal(state.selfUnderstanding.status,'established');
+  assert.match(app.prompt('another-new-chat'),new RegExp(id));
+  assert.equal((await app.call('stop')).value.running,false);
+  assert.equal(app.prompt('chat-0'),''); assert.equal(app.prompt('another-new-chat'),'');
+  assert.equal((await app.call('export')).value.events.length,3);
+  await app.close(); app=bridgeHarness({dataDir:dir});
+  assert.equal((await app.call('status')).value.ghostId,id);
+  assert.equal((await app.call('status')).value.running,false);
+});
+
+test('pending or malformed uninstall marker never recreates a wiped Ghost database', async () => {
+  for(const marker of ['{broken',JSON.stringify({schemaVersion:1,packageName:'dsh-ghost',ghostId:'existing-id',version:9})]) {
+    const dir=fs.mkdtempSync(path.join(os.tmpdir(),'ghost-pending-bridge-'));
+    const job=marker.startsWith('{broken')?marker:JSON.stringify({...JSON.parse(marker),dataDir:fs.realpathSync(dir)});
+    fs.writeFileSync(path.join(dir,'.ghost-uninstall-pending.json'),job);
+    const app=bridgeHarness({dataDir:dir});
+    try {
+      assert.equal(fs.existsSync(path.join(dir,'ghost.sqlite')),false);
+      assert.equal((await app.call('start')).ok,false);
+      assert.equal(app.prompt('new-chat'),'');
+      assert.equal(fs.existsSync(path.join(dir,'ghost.sqlite')),false);
+    } finally {await app.close();fs.rmSync(dir,{recursive:true,force:true});}
+  }
 });

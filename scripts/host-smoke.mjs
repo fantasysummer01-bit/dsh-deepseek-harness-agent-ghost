@@ -90,7 +90,7 @@ export async function runHostSmoke({ sdkRoot = process.env.DSH_SDK_ROOT } = {}) 
     assert.equal(boot.value.settings.captureEnabled, false);
     const saved = await call('configure', {
       expectedVersion: boot.value.version,
-      patch: { name: 'Ghost real Host smoke', settings: { captureEnabled: true } },
+      patch: { name: 'Ghost real Host smoke', settings: { enabled: true, captureEnabled: true } },
     });
     assert.equal(saved.ok, true);
 

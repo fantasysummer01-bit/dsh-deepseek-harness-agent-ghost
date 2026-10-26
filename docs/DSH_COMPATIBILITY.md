@@ -144,3 +144,8 @@ $DesktopCli = Join-Path $DesktopRoot 'resources\runtime\cli\bin\dsh.cmd'
 安装会更改 profile 的 `package.json` 和 `pnpm-lock.yaml`，bundle 选择保存在 `package.json` 的 `dsh.profile.bundles`。失败/取消安装会恢复这两份预先快照，已下载文件可能仍留在 node_modules/store；诊断记录位于 `.plugin-manager`。移除失败可能保留已经完成的步骤。
 
 最小可回退记录：安装前保存 profile 的 `package.json`、已有 `pnpm-lock.yaml`，并保存/校验已有 `cordis.patch.yml`、`pnpm-workspace.yaml`，记录文件原本不存在的情形；优先使用官方 remove 撤销新增包，保留原有包与数据。不要覆盖全套 profile 或直接删除 node_modules。本节说明官方工具语义，具体安装结果与备份位置应按实际操作记录。
+
+
+## 0.2.0 更新
+
+原设置编辑器已由黑盒控制页替代；详情以 docs/ACCEPTANCE.md 的 0.2.0 验证边界为准。卸载等待宿主正常退出，不强停任务。已安装的本地 link/junction 随源码更新，运行中的宿主仍需正常重新加载。

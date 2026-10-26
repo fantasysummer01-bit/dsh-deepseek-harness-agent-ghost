@@ -9,7 +9,7 @@ $savedSdkRoot = $env:DSH_SDK_ROOT
 try {
     $env:ELECTRON_RUN_AS_NODE = '1'
     $env:DSH_SDK_ROOT = $sdkRoot
-    $testPaths = @('bridge', 'core', 'client', 'host', 'transport') | ForEach-Object { Join-Path $projectRoot "test\$_.test.mjs" }
+    $testPaths = Get-ChildItem -LiteralPath (Join-Path $projectRoot 'test') -Filter '*.test.mjs' | Sort-Object Name | ForEach-Object { $_.FullName }
     $logDir = Join-Path $projectRoot '.runtime'
     New-Item -ItemType Directory -Path $logDir -Force | Out-Null
     $stdoutFile = Join-Path $logDir 'tests.stdout.log'
