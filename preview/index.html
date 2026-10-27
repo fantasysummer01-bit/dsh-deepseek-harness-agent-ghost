@@ -47,6 +47,7 @@
     effects.splice(0).forEach(work=>work());
   }
   let state={ghostId:'ghost-demo-6a2a17',branchId:'branch-local-04e9',version:7,name:'Ghost',identity:'',traits:{curiosity:.62,initiative:.45,caution:.72},goals:[],settings:{enabled:false,captureEnabled:false,captureAssistant:true,allowedSessions:[],contextBudgetBytes:6000,topK:5},counts:{events:12,changes:7},health:{ok:true,readOnly:false,error:null},lastCheckpoint:{createdAt:'2026-10-26T10:30:00+08:00'}};
+  state.update={phase:'idle',currentVersion:'0.5.0'};
   state.selfUnderstanding=new URLSearchParams(location.search).get('identity')==='formed'
     ? {status:'established',summary:'在几次独立交流中，逐渐形成了对可追溯记忆与谨慎表达的持续关注。',displayName:'小幽灵（演示）',evidenceIds:['evt-demo-identity-1','evt-demo-identity-2','evt-demo-identity-3'],sessionCount:3,updatedAt:'2026-10-26T10:30:00+08:00'}
     : {status:'forming',summary:'',displayName:null,evidenceIds:[],sessionCount:0,updatedAt:null};
@@ -65,6 +66,13 @@
       else if(action==='checkpoint'){state.lastCheckpoint={createdAt:new Date().toISOString()};value=state.lastCheckpoint;}
       else if(action==='verify')value={ok:true};
       else if(action==='export')value={format:'dsh-ghost-core',formatVersion:1,schemaVersion:1,sha256:'a'.repeat(64),preview:true,state,events};
+      else if(action==='update'){
+        const mode=new URLSearchParams(location.search).get('update');
+        state.update=mode==='new'?{phase:'pending',currentVersion:'0.5.0',latestVersion:'0.6.0',requiresDshExit:true,preview:true}
+          : mode==='error'?{phase:'error',currentVersion:'0.5.0',error:'演示：GitHub 下载失败，未准备更新'}
+          : {phase:'up_to_date',currentVersion:'0.5.0',latestVersion:'0.5.0',preview:true};
+        value=structuredClone(state.update);
+      }
       else if(action==='uninstallplan'){
         uninstallPlan={planId:'preview-only-plan',expiresAt:new Date(Date.now()+300000).toISOString(),ghostId:state.ghostId,stateVersion:state.version,requiresDshExit:true,dataDir:'C:\\DemoGhost\\.dsh\\ghost',profileDir:'C:\\DemoGhost\\.dsh\\profiles\\desktop',deleteFiles:['ghost.sqlite','ghost.sqlite-wal','ghost.sqlite-shm'],retained:['演示：不访问或删除任何真实文件'],confirmationText:'UNINSTALL GHOST'};
         value=structuredClone(uninstallPlan);

@@ -60,6 +60,18 @@ const plan = (patch = {}) => ({
   confirmationText: 'UNINSTALL GHOST', ...patch,
 });
 async function loaded(responder) { const app = harness(responder); app.render(); await settle(); return app; }
+
+test('damaged update control state blocks conflicting maintenance but keeps core controls available', async () => {
+  const state = fixture(); state.update = { phase: 'error', blocking: true, error: '更新状态损坏，请刷新' };
+  const app = await loaded(() => ({ ok: true, value: state }));
+  const panel = app.render();
+  assert.equal(button(panel, '检查更新').props.disabled, true);
+  assert.equal(button(panel, '卸载 Ghost').props.disabled, true);
+  assert.equal(button(panel, '启动 GHOST 系统').props.disabled, false);
+  assert.equal(button(panel, '导出 Ghost 核心').props.disabled, false);
+  assert.ok(button(panel, '刷新更新状态'));
+  assert.doesNotMatch(text(panel), /更新已准备/);
+});
 function acknowledge(app, value = 'UNINSTALL GHOST', checked = true) {
   let panel = app.render();
   walk(panel, node => node.type === 'input' && node.props?.['aria-label'] === '确认删除 Ghost 本地记忆与状态')[0].props.onChange({ target: { checked } });
@@ -224,4 +236,94 @@ test('failed export does not download a misleading file', async () => {
   const app=await loaded((_service,action)=>action==='export'?{ok:false,error:{message:'Export failed'}}:{ok:true,value:fixture()});
   await button(app.render(),'导出 Ghost 核心').props.onClick();
   assert.equal(app.downloads.length,0); assert.match(text(app.render()),/Export failed/);
+});
+
+test('checking updates is explicit and a current version does not prepare an installation', async () => {
+  const app = await loaded((_service, action) => ({ ok: true,
+    value: action === 'update' ? { phase: 'up_to_date', currentVersion: '0.5.0', latestVersion: '0.5.0' } : fixture() }));
+  assert.equal(app.calls.some(row => row[1] === 'update'), false);
+  await button(app.render(), '检查更新').props.onClick();
+  assert.equal(app.calls.filter(row => row[1] === 'update').length, 1);
+  assert.deepEqual(Object.keys(app.calls.find(row => row[1] === 'update')[2]), []);
+  assert.match(text(app.render()), /已是最新版本 · 0\.5\.0/);
+  assert.doesNotMatch(text(app.render()), /更新已准备/);
+  assert.equal(button(app.render(), '卸载 Ghost').props.disabled, false);
+  assert.equal(app.calls.some(row => ['configure', 'stop', 'uninstallconfirm'].includes(row[1])), false);
+});
+
+test('a prepared newer version waits for a normal exit and keeps ordinary Ghost controls available', async () => {
+  const state = fixture(); state.running = true;
+  const app = await loaded((_service, action) => ({ ok: true,
+    value: action === 'update' ? { phase: 'pending', currentVersion: '0.5.0', latestVersion: '0.6.0', requiresDshExit: true } : state }));
+  await button(app.render(), '检查更新').props.onClick();
+  const panel = app.render();
+  assert.match(text(panel), /更新已准备，正常退出 DSH 后完成，核心记录保留/);
+  assert.doesNotMatch(text(panel), /更新成功|已安装|已完成更新/);
+  assert.equal(button(panel, '检查更新').props.disabled, true);
+  assert.equal(button(panel, '卸载 Ghost').props.disabled, true);
+  assert.equal(button(panel, '关闭').props.disabled, false);
+  assert.equal(button(panel, '导出 Ghost 核心').props.disabled, false);
+  assert.equal(button(panel, '刷新更新状态').props.disabled, false);
+  assert.equal(app.calls.some(row => ['stop', 'start', 'configure', 'uninstallconfirm'].includes(row[1])), false);
+});
+
+test('update RPC failures and download failures remain visible without claiming preparation', async () => {
+  for (const problem of [
+    { ok: false, error: { code: 'NETWORK_ERROR', message: 'GitHub 暂时不可达' } },
+    { ok: true, value: { phase: 'error', currentVersion: '0.5.0', error: '下载校验失败' } },
+  ]) {
+    const app = await loaded((_service, action) => action === 'update' ? problem : { ok: true, value: fixture() });
+    await button(app.render(), '检查更新').props.onClick();
+    const panel = app.render();
+    assert.match(text(panel), /GitHub 暂时不可达|下载校验失败/);
+    assert.doesNotMatch(text(panel), /更新已准备|更新成功/);
+    assert.equal(button(panel, '检查更新').props.disabled, false);
+    assert.equal(button(panel, '卸载 Ghost').props.disabled, false);
+  }
+});
+
+test('a persisted update remains refreshable after the panel is reopened', async () => {
+  const state = fixture(); state.update = { phase: 'pending', currentVersion: '0.5.0', latestVersion: '0.6.0' };
+  const app = await loaded(() => ({ ok: true, value: state }));
+  assert.match(text(app.render()), /更新已准备/);
+  await button(app.render(), '刷新更新状态').props.onClick();
+  assert.equal(app.calls.filter(row => row[1] === 'status').length, 2);
+  assert.equal(app.calls.some(row => row[1] === 'update'), false);
+  assert.equal(button(app.render(), '卸载 Ghost').props.disabled, true);
+});
+
+test('repeated update clicks cannot enqueue two jobs or open uninstall during preparation', async () => {
+  let finishUpdate;
+  const app = await loaded((_service, action) => action === 'update'
+    ? new Promise(resolve => { finishUpdate = resolve; }) : { ok: true, value: fixture() });
+  const panel = app.render(), updateButton = button(panel, '检查更新'), uninstallButton = button(panel, '卸载 Ghost');
+  const first = updateButton.props.onClick(), second = updateButton.props.onClick();
+  await uninstallButton.props.onClick();
+  assert.equal(app.calls.filter(row => row[1] === 'update').length, 1);
+  assert.equal(app.calls.some(row => row[1] === 'uninstallplan'), false);
+  assert.equal(button(app.render(), '检查更新中…').props.disabled, true);
+  finishUpdate({ ok: true, value: { phase: 'pending', currentVersion: '0.5.0', latestVersion: '0.6.0' } });
+  await Promise.all([first, second]);
+  assert.equal(button(app.render(), '检查更新').props.disabled, true);
+});
+
+test('unknown or error-only update responses do not silently invent success', async () => {
+  for (const value of [{ phase: 'installed' }, { phase: 'error' }]) {
+    const app = await loaded((_service, action) => ({ ok: true, value: action === 'update' ? value : fixture() }));
+    await button(app.render(), '检查更新').props.onClick();
+    assert.match(text(app.render()), /未取得有效更新状态|检查更新失败/);
+    assert.doesNotMatch(text(app.render()), /更新已准备|更新成功/);
+  }
+});
+
+test('a queued uninstall hides update controls while read-only memory can still check code updates', async () => {
+  const pending = fixture(); pending.uninstall = { pending: true };
+  const queued = await loaded(() => ({ ok: true, value: pending }));
+  assert.equal(button(queued.render(), '检查更新'), undefined);
+  const readonly = fixture(); readonly.health = { ok: false, readOnly: true, error: 'Memory unavailable' };
+  const app = await loaded((_service, action) => ({ ok: true,
+    value: action === 'update' ? { phase: 'up_to_date', currentVersion: '0.5.0' } : readonly }));
+  assert.equal(button(app.render(), '检查更新').props.disabled, false);
+  await button(app.render(), '检查更新').props.onClick();
+  assert.match(text(app.render()), /已是最新版本/);
 });

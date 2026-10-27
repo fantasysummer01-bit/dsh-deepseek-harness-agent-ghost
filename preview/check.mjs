@@ -18,6 +18,22 @@ try {
   if (exported.format !== 'dsh-ghost-core' || !exported.preview || !exported.events.length) throw new Error('Invalid preview core download');
   if (await page.locator('.dsh-ghost input, .dsh-ghost textarea, .dsh-ghost select').count()) throw new Error('Daily surface unexpectedly contains editors');
   await page.screenshot({ path: 'artifacts/ui/ghost-off.png', fullPage: true });
+  await page.getByRole('button', { name: '检查更新', exact: true }).click();
+  await page.getByText('已是最新版本 · 0.5.0', { exact: true }).waitFor();
+  await page.goto('http://127.0.0.1:8768/?update=new');
+  await page.getByRole('button', { name: '检查更新', exact: true }).click();
+  await page.getByText('更新已准备，正常退出 DSH 后完成，核心记录保留。', { exact: true }).waitFor();
+  if (await page.getByRole('button', { name: '检查更新', exact: true }).isEnabled()) throw new Error('Queued update allowed another job');
+  if (await page.getByRole('button', { name: '卸载 Ghost', exact: true }).isEnabled()) throw new Error('Uninstall remained enabled during a queued update');
+  if (!await page.getByRole('button', { name: '启动 GHOST 系统', exact: true }).isEnabled()) throw new Error('Queued update disabled ordinary Ghost control');
+  if (!await page.getByRole('button', { name: '导出 Ghost 核心', exact: true }).isEnabled()) throw new Error('Queued update disabled core export');
+  await page.screenshot({ path: 'artifacts/ui/ghost-update-pending.png', fullPage: true });
+  await page.goto('http://127.0.0.1:8768/?update=error');
+  await page.getByRole('button', { name: '检查更新', exact: true }).click();
+  await page.getByText('演示：GitHub 下载失败，未准备更新', { exact: true }).waitFor();
+  if (!await page.getByRole('button', { name: '检查更新', exact: true }).isEnabled()) throw new Error('Failed update cannot be retried');
+  await page.goto('http://127.0.0.1:8768/');
+  await page.getByRole('button', { name: '启动 GHOST 系统', exact: true }).waitFor();
   await page.getByRole('button', { name: '启动 GHOST 系统', exact: true }).click();
   await page.getByRole('button', { name: '关闭', exact: true }).waitFor();
   await page.getByRole('button', { name: '关闭', exact: true }).click();
@@ -48,5 +64,5 @@ try {
   await page.screenshot({ path: 'artifacts/ui/ghost-dark.png', fullPage: true });
   if (errors.length || scrollWidth > 590) throw new Error(JSON.stringify({ errors, scrollWidth }));
   console.log(JSON.stringify({ errors, narrowScrollWidth: scrollWidth, viewport: 590,
-    checks: ['default off', 'start/stop', 'no daily editors', 'internal identity hidden', 'uninstall plan/cancel', 'exact typed/checkbox gate', 'preview-only queued uninstall', 'narrow/dark layout'] }));
+    checks: ['default off', 'start/stop', 'no daily editors', 'internal identity hidden', 'explicit update check', 'preview-only queued update', 'update failure and retry', 'uninstall plan/cancel', 'exact typed/checkbox gate', 'preview-only queued uninstall', 'narrow/dark layout'] }));
 } finally { await browser.close(); }

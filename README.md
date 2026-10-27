@@ -1,6 +1,6 @@
 # DSH / DeepSeek Harness Agent-Ghost
 
-**Ghost 0.4.0 · 中文 / English**
+**Ghost 0.5.0 · 中文 / English**
 
 Ghost 为智能体保存记忆和人格，让不同对话中的经历能够延续。记忆管理参考海马体的机制，理解和表达由 LLM 完成。
 

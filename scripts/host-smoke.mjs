@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as Ghost from '../lib/index.js';
 import { GhostStore } from '../lib/core.js';
 import { invokeRoute } from './testing/rpc-probe.mjs';
+import { runUpdateHostSmoke } from './update-host-smoke.mjs';
 
 const ACTIVE = 2;
 const DISPOSED = 4;
@@ -167,8 +168,10 @@ export async function runHostSmoke({ sdkRoot = process.env.DSH_SDK_ROOT } = {}) 
 
     const afterUnload = await ctx.systemPrompt.assemble({ agent: { id: session.id, session } });
     assert.equal(renderContextSnapshot(afterUnload), '', 'prompt contribution survived real Cordis unload');
+    const updateCli = runUpdateHostSmoke({ sdkRoot: root });
     return {
       status: 'PASS', suite: 'real-cordis-host-contract',
+      updateCli,
       sdkVersions: {
         cordis: cordisSdk.metadata.version,
         session: sessionSdk.metadata.version,
